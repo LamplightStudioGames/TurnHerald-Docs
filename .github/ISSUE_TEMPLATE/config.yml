@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Official Documentation
+    url: https://lamplightstudiogames.com/docs/turnherald/
+    about: Browse tutorials, how-to guides, and the full API reference for TurnHerald.
+  - name: Direct Email Support
+    url: mailto:contact@lamplightstudiogames.com
+    about: Private licensing, billing, or confidential project issues (Lamplight Studio).

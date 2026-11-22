@@ -1,0 +1,173 @@
+# Record and replay a battle
+
+Turn a live battle into a file of bytes, play it back to confirm it reproduces, and read the
+divergence report when it does not. A replay carries its own copy of the compiled content, so it
+stays playable after you edit your catalog.
+
+## Capture a replay
+
+`ReplayEnvelope.Capture` reads a live engine and returns the whole recording: the compiled content,
+the start request, the seed, every recorded command, and the periodic checkpoints the engine kept
+along the way. Capture at any point - the envelope covers history up to that moment, not to the end
+of the fight.
+
+```csharp
+using TurnHerald.Simulation;
+
+var replay = ReplayEnvelope.Capture(engine);
+var bytes = ReplaySerializer.Write(replay);
+System.IO.File.WriteAllBytes(path, bytes);
+```
+
+`Capture` serialises the envelope before returning it, so a recording that could not be written
+throws `ReplayWriteException` instead of handing you an unwritable envelope. It refuses more than
+4,096 recorded commands, more than 128 periodic checkpoints (the engine keeps one per 32 commands),
+or a file over 64 MiB.
+
+Commands the transport refused never enter the recording. Commands the rules rejected do, with the
+reason id they were rejected for, so a played-back battle refuses them again at the same point.
+
+### Capture it in the editor
+
+1. Open **Tools > TurnHerald > Battle Workbench** and create a session, as
+   [Step a battle in the Workbench](balance-with-the-workbench.md#open-a-session) describes.
+2. Step or play the battle to the point you want recorded.
+3. Expand the **Replay** foldout and press **Capture**. The message strip reports the byte count.
+4. Press **Save** and choose a location outside the project's `Assets` folder.
+
+![The Workbench Replay foldout with Capture and Save enabled, Step Recorded and Run To End greyed out, and the message strip reading Captured 29108 replay bytes](../assets/images/10-workbench-replay-capture.png){ .shot }
+
+**Capture** is enabled only on an authoritative session; a preview session and a session already
+playing a replay both refuse it, which is why the two buttons on the right stay grey until you open
+a recording. A save path inside `Assets` is refused with `workbench.export.path-forbidden`, so a
+recording cannot become an imported asset by accident. Write beside the project, not into it.
+
+## Write and read the file
+
+`ReplaySerializer.Write` returns UTF-8 bytes of canonical JSON, and canonical means byte-exact.
+Reading re-encodes the file and compares, so a file that is valid JSON but not the exact canonical
+form is rejected: reordered fields, an extra field, a byte-order mark, a trailing newline and `00`
+in place of `0` all fail. Treat the bytes as opaque and never hand-edit them.
+
+`ReplaySerializer.Read` returns a result rather than throwing, and a failure carries one diagnostic.
+
+```csharp
+ReplayReadResult read = ReplaySerializer.Read(bytes, compiled.MechanicsRegistry);
+if (!read.Succeeded) Debug.LogError(read.Diagnostic.Value.ToString());
+```
+
+| Diagnostic id | Cause |
+| --- | --- |
+| `replay.invalid` | The bytes are not the canonical form for the format they declare |
+| `replay.incompatible` | The declared format or version tuple is not one this package reads |
+| `replay.hash-mismatch` | An embedded hash does not match the bytes it covers |
+| `replay.limit` | The file exceeds a command, checkpoint, property or byte limit |
+
+Pass the mechanics registry that compiled your content. The single-argument overload builds the
+shipped built-ins, and cannot decode content that binds an implementation you registered yourself.
+
+!!! note "A replay does not read your project"
+    The compiled content and the start request travel inside the file, hashed. Playback rebuilds an
+    engine from those embedded bytes, so it never consults the catalog currently in your project.
+
+## Play it back
+
+`ReplayExecutor.Execute` creates a fresh engine from the embedded content, start request and seed,
+drives it to each recorded submission boundary, resubmits each recorded command there, and compares
+hashes at every checkpoint and at the end.
+
+```csharp
+var executed = ReplayExecutor.Execute(
+    read.Replay, compiled.SchedulerRegistry, compiled.MechanicsRegistry);
+
+if (executed.Succeeded)
+    Debug.Log("Reproduced: " + executed.Snapshot.StateHash);
+```
+
+On success `Snapshot` is the final state, and its `StateHash` and `EventChainHash` equal the ones
+recorded at capture. The result also hands back `FormulaAttributionTraces` and `AiDecisionTraces`
+produced while replaying, which sit outside the battle state and the hashes.
+
+### Play it back in the editor
+
+Press **Open Replay** in the toolbar and pick the `.bytes` file. The message strip confirms the
+session, and the **Replay** foldout swaps which buttons are live: **Capture** and **Save** go grey,
+**Step Recorded** and **Run To End** become available.
+
+![The Workbench Replay foldout on an opened recording, with Capture and Save greyed out, Step Recorded and Run To End enabled, and the message strip reading Opened a replay session](../assets/images/11-workbench-replay-verification.png){ .shot }
+
+**Run To End** steps to the end of the recording, verifying every recorded command, every periodic
+checkpoint it crosses, and the final checkpoint, then cross-checks its verdict against an independent
+`ReplayExecutor.Execute` run. **Step Recorded** submits the next recorded command one at a time, and
+is refused unless the engine is currently exposing a human decision and the recording still has
+commands left.
+
+Verification is continuous rather than a final check: after every engine call the window compares the
+newly recorded command against the envelope by index - disposition, reason ID, command-event hash,
+and, from replay format 2 on, the submission boundary's tick, event sequence and pre-command state
+hash. The first mismatch freezes the session, prints the divergence kind, the command and checkpoint
+indices and both full digests, and refuses every further step with `workbench.replay.diverged`. A
+frozen session cannot be thawed; create or reopen a session to carry on.
+
+## Detect divergence
+
+On a failed execution, `Diagnostic` is `replay.divergence` with a sentence naming the boundary,
+`CommandIndex` and `CheckpointIndex` say how far it got, and `ExpectedHash` and `ActualHash` give
+the recorded value against the one produced now. `HashKind` says which hash disagreed:
+
+| `HashKind` | Meaning |
+| --- | --- |
+| `PreCommandState` | The state reached just before a recorded command differed |
+| `CommandEvent` | A resubmitted command produced a different result or event hash |
+| `State` | A checkpoint's battle state differed |
+| `EventChain` | The state matched but the events leading to it did not |
+
+### Content drift or behaviour drift
+
+Because the content ships inside the file, a divergence is never your project's content changing. It
+means the same content no longer resolves the same way: engine code changed, or a mechanics
+implementation registered under an unchanged id now behaves differently.
+
+To ask the other question - whether your *current* content still produces that battle - recompile
+the catalog, create an engine from the same encounter and the same seed, run it to the end, and
+compare `snapshot.ContentManifestHash` with `replay.ContentManifestHash`. If those differ, your
+content changed. If they match and the replay still diverges, behaviour changed.
+
+## Upgrade older replays
+
+Three replay formats exist. Content authored today compiles to the third, and `Read` and `Execute`
+accept all three, so nothing you capture now needs upgrading. `ReplayMigrationChain` is the
+mechanism for a future format bump: it holds `IReplayMigration` steps that each advance exactly one
+version, and the constructor throws if a step skips a version or two steps claim the same origin.
+No migrations are registered for you.
+
+```csharp
+var chain = new ReplayMigrationChain(myMigrations);
+var upgraded = chain.Migrate(bytes, fromVersion, targetVersion);
+if (upgraded.Succeeded)
+    read = ReplaySerializer.Read(upgraded.Bytes, compiled.MechanicsRegistry);
+```
+
+`Migrate` never mutates the array you pass. It fails with `replay.migration.missing` when no step
+covers a version in the range, and `replay.migration.invalid-result` when a step returns nothing usable.
+
+## Replays as regression tests
+
+Record a battle you consider correct, keep the bytes with your test data, and executing that file
+later is one assertion. It answers a narrow question honestly: whether the engine and the
+implementations you register still reproduce the battle that was recorded. For the content question,
+re-run the same encounter and seed against the recompiled catalog and compare the manifest hash.
+
+Neither check replaces looking at aggregates. [Run Monte Carlo batches](monte-carlo-batches.md)
+tells you whether a change was fair; [Step a battle in the Workbench](balance-with-the-workbench.md)
+is where you find out why one number came out the way it did.
+
+## Next
+
+- **[Step a battle in the Workbench](balance-with-the-workbench.md)** - the four inspection panels
+  you read once a recording is open and stepping.
+- **[Run Monte Carlo batches](monte-carlo-batches.md)** - where a failing seed comes from, and how it
+  arrives here as a replay session.
+- **[Determinism](../explanation/determinism.md)** - what makes a replay reproduce, and the choices
+  on your side that break it.
+- **[Replay reference](../reference/replay.md)** - the full member list for every replay type.

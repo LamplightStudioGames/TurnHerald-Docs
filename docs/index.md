@@ -126,22 +126,19 @@ report can be a seed and a replay file rather than a description. That holds str
 
 | Requirement | Detail |
 | --- | --- |
-| Core engine | Engine-free data and simulation assemblies are designed for Unity 2022.3 compatibility |
-| Native editor | Presentation, Studio and adapters are currently validated on Unity 6000.3.25f1 (Unity 6.3), Built-in |
-| Other pipelines/editors | Pending verification |
-| Dependencies | None. No DRM, no telemetry, no online activation |
+| Unity | Verified on **Unity 6000.3 LTS (`6000.3.25f1`)** and **Unity 6000.6 (`6000.6.7f1`)** (including Domain Reload disabled), plus clean import, EditMode tests, and IL2CPP player build on **Unity `6000.4.5f1`** |
+| Render pipelines | **Built-in** and **URP** (`17.3.0` / `17.6.0`) verified in clean buyer-import projects |
+| Required Unity package | `com.unity.ugui` (declared automatically in `TurnHerald-1.0.0.unitypackage`); optional URP demos require URP |
+| Core assemblies | `TurnHerald.Simulation` and `TurnHerald.Data` are engine-free (`noEngineReferences: true`) |
+| Dependencies | None. No third-party packages, no DRM, no telemetry, no online activation |
 
 !!! note "What you still bring"
     TurnHerald draws the interface, the stage and the bars. Character art, animation and audio
     stay yours. The sample scene binds placeholder tokens, status icons and sound effects so you
     can see the presentation layer working before you replace them.
 
-!!! note "Working name and evidence"
-    TurnHerald is a working name pending legal, store and domain clearance. The current
-    source guides describe editor workflows; they do not establish release approval or
-    native-editor support beyond the validated Unity 6.3 configuration above. The native
-    runtime profile gallery has a fresh English capture pass; real-mouse editor workflow video
-    evidence remains a separate pending requirement.
+!!! info "Documentation only"
+    This site documents TurnHerald 1.0.0. The product source is not published in this repository.
 
 ## Next
 

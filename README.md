@@ -80,11 +80,9 @@ watched paused-and-stepped produce identical results.
 
 ## Requirements
 
-- The core engine and data assemblies are engine-free and designed for Unity 2022.3
-  compatibility.
-- Native presentation, Studio and adapters are currently validated on Unity **6000.3.25f1**
-  (Unity 6.3) with the Built-in render pipeline. Other editor versions and pipelines remain
-  pending verification.
+- **Verified Unity versions:** **Unity 6000.3 LTS (`6000.3.25f1`)** and **Unity 6000.6 (`6000.6.7f1`)** with **Built-in** and **URP** (`17.3.0` / `17.6.0`), including **Domain Reload disabled** (`0` compiler errors, `0` warnings, `0` exceptions in clean buyer-import validation). Clean import, EditMode tests, and IL2CPP Linux player build are also validated on **Unity `6000.4.5f1`**.
+- **Required Unity package:** `com.unity.ugui` (declared automatically inside `TurnHerald-1.0.0.unitypackage` via `packagemanagermanifest`; optional URP demos require URP).
+- `TurnHerald.Simulation` and `TurnHerald.Data` are engine-free (`noEngineReferences: true`) with no third-party dependencies, no DRM, no telemetry, and no online activation.
 
 The interface is drawn with a signed-distance-field shader, so it stays crisp at any
 resolution and ships no textures. Glow is drawn in-shader, which is why the package needs
